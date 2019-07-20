@@ -1,0 +1,23 @@
+LIBSHELL_OBJS = \
+	Parser/Program.o \
+	Parser/Command.o \
+	Parser/Word.o \
+	Parser/Redirection.o \
+	Parser/RedirectionOperand.o \
+	Parser/Parser.o
+
+TEST_OBJS = test.o
+TEST_PROGRAM = test
+
+OBJS = $(EXTRA_OBJS) $(LIBSHELL_OBJS) $(TEST_OBJS)
+
+LIBRARY = libshell.a
+DEFINES += -DUSERLAND
+
+.cpp.o:
+	@echo "CXX $<"; $(CXX) $(CXXFLAGS) -o $@ -c $<
+
+-include $(OBJS:%.o=%.d)
+
+clean:
+	@echo "CLEAN"; rm -f $(TEST_PROGRAM) $(LIBRARY) $(OBJS) *.d

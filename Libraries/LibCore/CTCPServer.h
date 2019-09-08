@@ -17,6 +17,9 @@ public:
 
     CTCPSocket* accept();
 
+    IPv4Address local_address();
+    u16 local_port();
+
     Function<void()> on_ready_to_accept;
 
 private:

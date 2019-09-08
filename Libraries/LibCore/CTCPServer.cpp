@@ -53,3 +53,24 @@ CTCPSocket* CTCPServer::accept()
 
     return new CTCPSocket({}, accepted_fd);
 }
+
+IPv4Address CTCPServer::local_address()
+{
+    if (m_fd == -1)
+        return {};
+
+    return {};
+}
+
+u16 CTCPServer::local_port()
+{
+    if (m_fd == -1)
+        return 0;
+
+    sockaddr_in address;
+    socklen_t len = sizeof(address);
+    if (getsockname(m_fd, (sockaddr*)&address, &len) != 0)
+        return 0;
+
+    return ntohs(address.sin_port);
+}

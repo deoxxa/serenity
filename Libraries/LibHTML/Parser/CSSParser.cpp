@@ -578,6 +578,13 @@ public:
         return StyleDeclaration::create(move(current_rule.properties));
     }
 
+    Vector<Selector> parse_standalone_selector()
+    {
+        consume_whitespace_or_comments();
+        parse_selector_list();
+        return current_rule.selectors;
+    }
+
 private:
     NonnullRefPtrVector<StyleRule> rules;
 
@@ -604,4 +611,10 @@ RefPtr<StyleDeclaration> parse_css_declaration(const StringView& css)
 {
     CSSParser parser(css);
     return parser.parse_standalone_declaration();
+}
+
+Vector<Selector> parse_css_selectors(const StringView& css)
+{
+    CSSParser parser(css);
+    return parser.parse_standalone_selector();
 }

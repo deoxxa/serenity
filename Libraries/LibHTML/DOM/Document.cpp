@@ -2,6 +2,7 @@
 #include <AK/StringBuilder.h>
 #include <LibCore/CTimer.h>
 #include <LibGUI/GApplication.h>
+#include <LibHTML/CSS/SelectorEngine.h>
 #include <LibHTML/CSS/StyleResolver.h>
 #include <LibHTML/DOM/Document.h>
 #include <LibHTML/DOM/DocumentType.h>
@@ -14,6 +15,7 @@
 #include <LibHTML/Frame.h>
 #include <LibHTML/Layout/LayoutDocument.h>
 #include <LibHTML/Layout/LayoutTreeBuilder.h>
+#include <LibHTML/Parser/CSSParser.h>
 #include <stdio.h>
 
 Document::Document()
@@ -271,6 +273,44 @@ Vector<const Element*> Document::get_elements_by_name(const String& name) const
     for_each_in_subtree_of_type<Element>([&](auto& element) {
         if (element.attribute("name") == name)
             elements.append(&element);
+        return IterationDecision::Continue;
+    });
+    return elements;
+}
+
+const Element* Document::query_selector(const String& selector) const
+{
+    auto css_selectors = parse_css_selectors(selector);
+    if (!css_selectors.size())
+        return nullptr;
+
+    const Element* found_element = nullptr;
+    for_each_in_subtree_of_type<Element>([&](auto& element) {
+        for (auto& css_selector : css_selectors) {
+            if (SelectorEngine::matches(css_selector, element)) {
+                found_element = &element;
+                return IterationDecision::Break;
+            }
+        }
+        return IterationDecision::Continue;
+    });
+    return found_element;
+}
+
+Vector<const Element*> Document::query_selector_all(const String& selector) const
+{
+    auto css_selectors = parse_css_selectors(selector);
+    if (!css_selectors.size())
+        return {};
+
+    Vector<const Element*> elements;
+    for_each_in_subtree_of_type<Element>([&](auto& element) {
+        for (auto& css_selector : css_selectors) {
+            if (SelectorEngine::matches(css_selector, element)) {
+                elements.append(&element);
+                break;
+            }
+        }
         return IterationDecision::Continue;
     });
     return elements;

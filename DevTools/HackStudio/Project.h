@@ -41,6 +41,7 @@ private:
 
     String m_name;
     String m_path;
+    String m_root;
     RefPtr<GModel> m_model;
     NonnullRefPtrVector<ProjectFile> m_files;
     RefPtr<ProjectTreeNode> m_root_node;

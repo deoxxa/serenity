@@ -14,6 +14,7 @@ OBJS = \
     CursorTool.o \
     WidgetTool.o \
     WidgetTreeModel.o \
+    TemplateListModel.o \
     main.o
 
 PROGRAM = HackStudio

@@ -7,22 +7,27 @@
 #include "FormWidget.h"
 #include "Locator.h"
 #include "Project.h"
+#include "TemplateListModel.h"
 #include "TerminalWrapper.h"
 #include "WidgetTool.h"
 #include "WidgetTreeModel.h"
 #include <LibCore/CFile.h>
+#include <LibDraw/GraphicsBitmap.h>
 #include <LibGUI/GAboutDialog.h>
 #include <LibGUI/GAction.h>
 #include <LibGUI/GActionGroup.h>
 #include <LibGUI/GApplication.h>
 #include <LibGUI/GBoxLayout.h>
 #include <LibGUI/GButton.h>
+#include <LibGUI/GDesktop.h>
 #include <LibGUI/GFilePicker.h>
 #include <LibGUI/GInputBox.h>
+#include <LibGUI/GItemView.h>
 #include <LibGUI/GLabel.h>
 #include <LibGUI/GMenu.h>
 #include <LibGUI/GMenuBar.h>
 #include <LibGUI/GMessageBox.h>
+#include <LibGUI/GMultilineText.h>
 #include <LibGUI/GSplitter.h>
 #include <LibGUI/GStackWidget.h>
 #include <LibGUI/GTabWidget.h>
@@ -33,21 +38,54 @@
 #include <LibGUI/GTreeView.h>
 #include <LibGUI/GWidget.h>
 #include <LibGUI/GWindow.h>
+#include <libgen.h>
 #include <stdio.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+bool make_is_available();
+bool open_project(GApplication* app, const char* file);
+void create_or_choose_project(GApplication* app);
+
+int main(int argc, char** argv)
+{
+    GApplication app(argc, argv);
+
+    // if (!make_is_available())
+    //     GMessageBox::show("The 'make' command is not available. You probably want to install the binutils, gcc, and make ports from the root of the Serenity repository.", "Warning", GMessageBox::Type::Warning, GMessageBox::InputType::OK);
+
+    if (argc > 1) {
+        if (!open_project(&app, argv[1])) {
+            GMessageBox::show("There was an error opening your project.", "Error", GMessageBox::Type::Error, GMessageBox::InputType::OK);
+            return 1;
+        }
+    } else {
+        create_or_choose_project(&app);
+    }
+
+    return app.exec();
+}
+
+bool make_is_available()
+{
+    auto pid = fork();
+    if (pid < 0)
+        return false;
+
+    if (!pid) {
+        int rc = execlp("make", "make", "--version", nullptr);
+        ASSERT(rc < 0);
+        perror("execl");
+        exit(127);
+    }
+
+    int wstatus;
+    waitpid(pid, &wstatus, 0);
+    return WEXITSTATUS(wstatus) == 0;
+}
+
 NonnullRefPtrVector<EditorWrapper> g_all_editor_wrappers;
 RefPtr<EditorWrapper> g_current_editor_wrapper;
-
-String g_currently_open_file;
-OwnPtr<Project> g_project;
-RefPtr<GWindow> g_window;
-RefPtr<GTreeView> g_project_tree_view;
-RefPtr<GStackWidget> g_right_hand_stack;
-RefPtr<GSplitter> g_text_inner_splitter;
-RefPtr<GWidget> g_form_inner_container;
-RefPtr<FormEditorWidget> g_form_editor_widget;
 
 static RefPtr<GTabWidget> s_action_tab_widget;
 
@@ -69,6 +107,11 @@ enum class EditMode {
     Form,
 };
 
+RefPtr<GStackWidget> g_right_hand_stack;
+RefPtr<GSplitter> g_text_inner_splitter;
+RefPtr<GWidget> g_form_inner_container;
+RefPtr<GAction> g_delete_action;
+
 void set_edit_mode(EditMode mode)
 {
     if (mode == EditMode::Text) {
@@ -89,15 +132,16 @@ Editor& current_editor()
     return current_editor_wrapper().editor();
 }
 
-static void build(TerminalWrapper&);
-static void run(TerminalWrapper&);
 void open_file(const String&);
-bool make_is_available();
 
-int main(int argc, char** argv)
+RefPtr<GWindow> g_window;
+String g_currently_open_file;
+OwnPtr<Project> g_project;
+RefPtr<GTreeView> g_project_tree_view;
+RefPtr<FormEditorWidget> g_form_editor_widget;
+
+bool open_project(GApplication* app, const char* file)
 {
-    GApplication app(argc, argv);
-
     Function<void()> update_actions;
 
     g_window = GWindow::construct();
@@ -111,14 +155,15 @@ int main(int argc, char** argv)
     widget->set_layout(make<GBoxLayout>(Orientation::Vertical));
     widget->layout()->set_spacing(0);
 
-    if (!make_is_available())
-        GMessageBox::show("The 'make' command is not available. You probably want to install the binutils, gcc, and make ports from the root of the Serenity repository.", "Error", GMessageBox::Type::Error, GMessageBox::InputType::OK, g_window);
+    char path_buf[PATH_MAX];
 
-    if (chdir("/home/anon/little") < 0) {
-        perror("chdir");
-        return 1;
+    file = realpath(file, path_buf);
+    if (!file) {
+        perror("realpath");
+        return false;
     }
-    g_project = Project::load_from_file("little.files");
+
+    g_project = Project::load_from_file(file);
     ASSERT(g_project);
 
     auto toolbar = GToolBar::construct(widget);
@@ -161,7 +206,7 @@ int main(int argc, char** argv)
         open_file(filename);
     });
 
-    auto delete_action = GCommonActions::make_delete_action([&](const GAction& action) {
+    g_delete_action = GCommonActions::make_delete_action([&](const GAction& action) {
         (void)action;
 
         auto files = selected_file_names();
@@ -196,12 +241,12 @@ int main(int argc, char** argv)
             }
         }
     });
-    delete_action->set_enabled(false);
+    g_delete_action->set_enabled(false);
 
     auto project_tree_view_context_menu = GMenu::construct("Project Files");
     project_tree_view_context_menu->add_action(new_action);
     project_tree_view_context_menu->add_action(add_existing_file_action);
-    project_tree_view_context_menu->add_action(delete_action);
+    project_tree_view_context_menu->add_action(*g_delete_action);
 
     auto outer_splitter = GSplitter::construct(Orientation::Horizontal, widget);
     g_project_tree_view = GTreeView::construct(outer_splitter);
@@ -216,7 +261,7 @@ int main(int argc, char** argv)
     };
 
     g_project_tree_view->on_selection_change = [&] {
-        delete_action->set_enabled(!g_project_tree_view->selection().is_empty());
+        g_delete_action->set_enabled(!g_project_tree_view->selection().is_empty());
     };
 
     g_right_hand_stack = GStackWidget::construct(outer_splitter);
@@ -360,7 +405,7 @@ int main(int argc, char** argv)
     toolbar->add_action(new_action);
     toolbar->add_action(add_existing_file_action);
     toolbar->add_action(save_action);
-    toolbar->add_action(delete_action);
+    toolbar->add_action(*g_delete_action);
     toolbar->add_separator();
 
     toolbar->add_action(GCommonActions::make_cut_action([&](auto&) { current_editor().cut_action().activate(); }));
@@ -416,7 +461,7 @@ int main(int argc, char** argv)
     auto app_menu = GMenu::construct("HackStudio");
     app_menu->add_action(save_action);
     app_menu->add_action(GCommonActions::make_quit_action([&](auto&) {
-        app.quit();
+        app->quit();
     }));
     menubar->add_menu(move(app_menu));
 
@@ -443,14 +488,14 @@ int main(int argc, char** argv)
 
     auto build_action = GAction::create("Build", { Mod_Ctrl, Key_B }, GraphicsBitmap::load_from_file("/res/icons/16x16/build.png"), [&](auto&) {
         reveal_action_tab(terminal_wrapper);
-        build(terminal_wrapper);
+        terminal_wrapper->run_command("make");
         stop_action->set_enabled(true);
     });
     toolbar->add_action(build_action);
 
     auto run_action = GAction::create("Run", { Mod_Ctrl, Key_R }, GraphicsBitmap::load_from_file("/res/icons/16x16/play.png"), [&](auto&) {
         reveal_action_tab(terminal_wrapper);
-        run(terminal_wrapper);
+        terminal_wrapper->run_command("make run");
         stop_action->set_enabled(true);
     });
     toolbar->add_action(run_action);
@@ -478,7 +523,7 @@ int main(int argc, char** argv)
     }));
     menubar->add_menu(move(help_menu));
 
-    app.set_menubar(move(menubar));
+    app->set_menubar(move(menubar));
 
     g_window->set_icon(small_icon);
 
@@ -488,20 +533,12 @@ int main(int argc, char** argv)
         remove_current_editor_action->set_enabled(g_all_editor_wrappers.size() > 1);
     };
 
-    open_file("main.cpp");
+    if (g_project->get_file("main.cpp"))
+        open_file("main.cpp");
 
     update_actions();
-    return app.exec();
-}
 
-void build(TerminalWrapper& wrapper)
-{
-    wrapper.run_command("make");
-}
-
-void run(TerminalWrapper& wrapper)
-{
-    wrapper.run_command("make run");
+    return true;
 }
 
 struct TextStyle {
@@ -559,7 +596,14 @@ static void rehighlight()
 
 void open_file(const String& filename)
 {
+    dbg() << "open_file " << filename;
+
     auto file = g_project->get_file(filename);
+    if (!file)
+        return;
+
+    dbg() << "opening " << file->name();
+
     current_editor().set_document(const_cast<GTextDocument&>(file->document()));
 
     if (filename.ends_with(".cpp") || filename.ends_with(".h")) {
@@ -584,20 +628,122 @@ void open_file(const String& filename)
     current_editor().set_focus(true);
 }
 
-bool make_is_available()
-{
-    auto pid = fork();
-    if (pid < 0)
-        return false;
+RefPtr<GWindow> g_new_project_window;
+RefPtr<GLabel> g_new_project_help_title;
+RefPtr<GMultilineText> g_new_project_help_content;
+RefPtr<GItemView> g_new_project_icons_section;
+RefPtr<GButton> g_new_project_button_open;
 
-    if (!pid) {
-        int rc = execlp("make", "make", "--version", nullptr);
-        ASSERT(rc < 0);
-        perror("execl");
-        exit(127);
+void create_or_choose_project(GApplication* app)
+{
+    g_new_project_window = GWindow::construct();
+    g_new_project_window->set_title("New Project");
+    Rect window_rect { 0, 0, 440, 450 };
+    window_rect.center_within(GDesktop::the().rect());
+    g_new_project_window->set_rect(window_rect);
+    g_new_project_window->set_resizable(false);
+
+    auto background = GWidget::construct();
+    g_new_project_window->set_main_widget(background);
+    background->set_fill_with_background_color(true);
+    background->set_layout(make<GBoxLayout>(Orientation::Vertical));
+    background->layout()->set_margins({ 8, 8, 8, 8 });
+    background->layout()->set_spacing(8);
+    background->set_size_policy(SizePolicy::Fill, SizePolicy::Fill);
+
+    auto header = GFrame::construct(background);
+    header->set_frame_shape(FrameShape::Container);
+    header->set_frame_shadow(FrameShadow::Sunken);
+    header->set_frame_thickness(2);
+    header->set_size_policy(SizePolicy::Fill, SizePolicy::Fixed);
+    header->set_preferred_size(0, 81);
+    header->set_layout(make<GBoxLayout>(Orientation::Vertical));
+    header->layout()->set_margins({ 8, 8, 8, 8 });
+    header->layout()->set_spacing(8);
+
+    auto header_image = GraphicsBitmap::load_from_file("/res/images/hackstudio/header.png");
+    if (header_image) {
+        auto header_inner = GLabel::construct(header);
+        header_inner->set_icon(header_image);
+    } else {
+        auto header_inner = GLabel::construct(header);
+        header_inner->set_font(Font::default_bold_font());
+        header_inner->set_text("HackStudio '98");
+        header_inner->set_text_alignment(TextAlignment::Center);
     }
 
-    int wstatus;
-    waitpid(pid, &wstatus, 0);
-    return WEXITSTATUS(wstatus) == 0;
+    auto main_section = GFrame::construct(background);
+    main_section->set_frame_shape(FrameShape::Container);
+    main_section->set_frame_shadow(FrameShadow::Raised);
+    main_section->set_frame_thickness(2);
+    main_section->set_layout(make<GBoxLayout>(Orientation::Vertical));
+    main_section->layout()->set_margins({ 8, 8, 8, 8 });
+    main_section->layout()->set_spacing(8);
+    main_section->set_size_policy(SizePolicy::Fill, SizePolicy::Fill);
+
+    auto icons_model = TemplateListModel::create("/res/templates/hackstudio");
+
+    g_new_project_icons_section = GItemView::construct(main_section);
+    g_new_project_icons_section->set_size_policy(SizePolicy::Fill, SizePolicy::Fill);
+    g_new_project_icons_section->set_model(icons_model);
+    g_new_project_icons_section->set_model_column(TemplateListModel::Column::Name);
+    g_new_project_icons_section->on_selection_change = [icons_model]() {
+        auto selection = g_new_project_icons_section->selection();
+        g_new_project_button_open->set_enabled(selection.size() == 1);
+        g_new_project_help_title->set_text(
+            selection.size() == 1
+                ? icons_model->entry(selection.first().row()).name
+                : "Select a template...");
+        g_new_project_help_content->set_text(
+            selection.size() == 1
+                ? icons_model->entry(selection.first().row()).description
+                : "");
+    };
+
+    auto lower_section = GWidget::construct(main_section.ptr());
+    lower_section->set_layout(make<GBoxLayout>(Orientation::Horizontal));
+    lower_section->layout()->set_spacing(8);
+    lower_section->set_size_policy(SizePolicy::Fill, SizePolicy::Fixed);
+    lower_section->set_preferred_size(0, 60);
+
+    auto help_container = GWidget::construct(lower_section.ptr());
+    help_container->set_layout(make<GBoxLayout>(Orientation::Vertical));
+    help_container->layout()->set_spacing(8);
+    help_container->set_size_policy(SizePolicy::Fill, SizePolicy::Fill);
+    help_container->set_preferred_size(0, 0);
+
+    g_new_project_help_title = GLabel::construct(help_container);
+    g_new_project_help_title->set_font(Font::default_bold_font());
+    g_new_project_help_title->set_text_alignment(TextAlignment::TopLeft);
+    g_new_project_help_title->set_size_policy(SizePolicy::Fill, SizePolicy::Fixed);
+    g_new_project_help_title->set_preferred_size(0, 10);
+    g_new_project_help_title->set_text("Select a template...");
+
+    g_new_project_help_content = GMultilineText::construct(help_container);
+    g_new_project_help_content->set_text_alignment(TextAlignment::TopLeft);
+    g_new_project_help_content->set_size_policy(SizePolicy::Fill, SizePolicy::Fill);
+    g_new_project_help_content->set_preferred_size(0, 0);
+
+    auto buttons_section = GWidget::construct(lower_section.ptr());
+    buttons_section->set_layout(make<GBoxLayout>(Orientation::Vertical));
+    buttons_section->layout()->set_spacing(8);
+    buttons_section->set_size_policy(SizePolicy::Fixed, SizePolicy::Fill);
+    buttons_section->set_preferred_size(70, 0);
+
+    g_new_project_button_open = GButton::construct("Open", buttons_section);
+    g_new_project_button_open->set_size_policy(SizePolicy::Fill, SizePolicy::Fixed);
+    g_new_project_button_open->set_preferred_size(0, 20);
+    g_new_project_button_open->set_enabled(false);
+    g_new_project_button_open->on_click = [](GButton&) {
+        dbgprintf("open\n");
+    };
+
+    auto button_cancel = GButton::construct("Cancel", buttons_section);
+    button_cancel->set_size_policy(SizePolicy::Fill, SizePolicy::Fixed);
+    button_cancel->set_preferred_size(0, 20);
+    button_cancel->on_click = [app](GButton&) {
+        app->quit(0);
+    };
+
+    g_new_project_window->show();
 }

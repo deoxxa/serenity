@@ -89,6 +89,8 @@ public:
 
     const Element* get_element_by_id(const String&) const;
     Vector<const Element*> get_elements_by_name(const String&) const;
+    const Element* query_selector(const String&) const;
+    Vector<const Element*> query_selector_all(const String&) const;
 
     const String& source() const { return m_source; }
     void set_source(const String& source) { m_source = source; }

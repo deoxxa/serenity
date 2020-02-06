@@ -142,6 +142,7 @@ Project::Project(const String& path, Vector<String>&& filenames)
     : m_path(path)
 {
     m_name = FileSystemPath(m_path).basename();
+    m_root = FileSystemPath(m_path).dirname();
 
     m_file_icon = GIcon(GraphicsBitmap::load_from_file("/res/icons/16x16/filetype-unknown.png"));
     m_cplusplus_icon = GIcon(GraphicsBitmap::load_from_file("/res/icons/16x16/filetype-cplusplus.png"));
@@ -150,7 +151,7 @@ Project::Project(const String& path, Vector<String>&& filenames)
     m_project_icon = GIcon(GraphicsBitmap::load_from_file("/res/icons/16x16/app-hack-studio.png"));
 
     for (auto& filename : filenames) {
-        m_files.append(ProjectFile::construct_with_name(filename));
+        m_files.append(ProjectFile::construct_with_name_and_path(filename, String::format("%s/%s", m_root.characters(), filename.characters())));
     }
 
     m_model = adopt(*new ProjectModel(*this));
@@ -181,7 +182,7 @@ OwnPtr<Project> Project::load_from_file(const String& path)
 
 bool Project::add_file(const String& filename)
 {
-    m_files.append(ProjectFile::construct_with_name(filename));
+    m_files.append(ProjectFile::construct_with_name_and_path(filename, String::format("%s/%s", m_root.characters(), filename.characters())));
     rebuild_tree();
     m_model->update();
     return save();
@@ -232,7 +233,6 @@ void Project::rebuild_tree()
     for (auto& file : m_files) {
         FileSystemPath path(file.name());
         ProjectTreeNode* current = root.ptr();
-        StringBuilder partial_path;
 
         for (int i = 0; i < path.parts().size(); ++i) {
             auto& part = path.parts().at(i);

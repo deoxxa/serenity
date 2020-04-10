@@ -25,6 +25,7 @@
  */
 
 #include <Kernel/Devices/DiskPartition.h>
+#include <Kernel/FileSystem/FileDescription.h>
 
 // #define OFFD_DEBUG
 
@@ -63,6 +64,62 @@ bool DiskPartition::write_blocks(unsigned index, u16 count, const u8* data)
 #endif
 
     return m_device->write_blocks(m_block_offset + index, count, data);
+}
+
+ssize_t DiskPartition::read(FileDescription& fd, u8* outbuf, ssize_t len)
+{
+    unsigned adjust = m_block_offset * block_size();
+
+#ifdef OFFD_DEBUG
+    klog() << "DiskPartition::read offset=" << fd.offset() << " adjust=" << adjust << " len=" << len;
+#endif
+
+    fd.seek(adjust, SEEK_CUR);
+    auto nread = m_device->read(fd, outbuf, len);
+    fd.seek(0 - adjust, SEEK_CUR);
+    return nread;
+}
+
+bool DiskPartition::can_read(const FileDescription& fd) const
+{
+    unsigned adjust = m_block_offset * block_size();
+
+#ifdef OFFD_DEBUG
+    klog() << "DiskPartition::can_read offset=" << fd.offset() << " adjust=" << adjust;
+#endif
+
+    const_cast<FileDescription&>(fd).seek(adjust, SEEK_CUR);
+    auto result = m_device->can_read(fd);
+    const_cast<FileDescription&>(fd).seek(0 - adjust, SEEK_CUR);
+    return result;
+}
+
+ssize_t DiskPartition::write(FileDescription& fd, const u8* inbuf, ssize_t len)
+{
+    unsigned adjust = m_block_offset * block_size();
+
+#ifdef OFFD_DEBUG
+    klog() << "DiskPartition::write offset=" << fd.offset() << " adjust=" << adjust << " len=" << len;
+#endif
+
+    fd.seek(adjust, SEEK_CUR);
+    auto nwritten = m_device->write(fd, inbuf, len);
+    fd.seek(0 - adjust, SEEK_CUR);
+    return nwritten;
+}
+
+bool DiskPartition::can_write(const FileDescription& fd) const
+{
+    unsigned adjust = m_block_offset * block_size();
+
+#ifdef OFFD_DEBUG
+    klog() << "DiskPartition::can_write offset=" << fd.offset() << " adjust=" << adjust;
+#endif
+
+    const_cast<FileDescription&>(fd).seek(adjust, SEEK_CUR);
+    auto result = m_device->can_write(fd);
+    const_cast<FileDescription&>(fd).seek(0 - adjust, SEEK_CUR);
+    return result;
 }
 
 const char* DiskPartition::class_name() const

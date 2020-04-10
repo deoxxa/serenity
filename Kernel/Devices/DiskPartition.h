@@ -40,10 +40,10 @@ public:
     virtual bool write_blocks(unsigned index, u16 count, const u8*) override;
 
     // ^BlockDevice
-    virtual ssize_t read(FileDescription&, u8*, ssize_t) override { return 0; }
-    virtual bool can_read(const FileDescription&) const override { return true; }
-    virtual ssize_t write(FileDescription&, const u8*, ssize_t) override { return 0; }
-    virtual bool can_write(const FileDescription&) const override { return true; }
+    virtual ssize_t read(FileDescription&, u8*, ssize_t) override;
+    virtual bool can_read(const FileDescription&) const override;
+    virtual ssize_t write(FileDescription&, const u8*, ssize_t) override;
+    virtual bool can_write(const FileDescription&) const override;
 
 private:
     virtual const char* class_name() const override;

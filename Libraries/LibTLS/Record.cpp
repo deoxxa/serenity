@@ -24,10 +24,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <AK/HexDump.h>
 #include <LibCore/Timer.h>
 #include <LibCrypto/ASN1/DER.h>
 #include <LibCrypto/PK/Code/EMSA_PSS.h>
 #include <LibTLS/TLSv12.h>
+
+#define TLS_DEBUG
 
 namespace TLS {
 
@@ -148,12 +151,12 @@ ByteBuffer TLSv12::hmac_message(const ByteBuffer& buf, const Optional<ByteBuffer
     ensure_hmac(mac_length, local);
     auto& hmac = local ? *m_hmac_local : *m_hmac_remote;
 #ifdef TLS_DEBUG
-    dbg() << "========================= PACKET DATA ==========================";
-    print_buffer((const u8*)&sequence_number, sizeof(u64));
-    print_buffer(buf);
+    dbg() << "========================= PACKET DATA START ==========================";
+    AK::hex_dump((const u8*)&sequence_number, sizeof(u64));
+    AK::hex_dump(buf);
     if (buf2.has_value())
-        print_buffer(buf2.value());
-    dbg() << "========================= PACKET DATA ==========================";
+        AK::hex_dump(buf2.value());
+    dbg() << "========================= PACKET DATA END ==========================";
 #endif
     hmac.update((const u8*)&sequence_number, sizeof(u64));
     hmac.update(buf);
@@ -164,7 +167,7 @@ ByteBuffer TLSv12::hmac_message(const ByteBuffer& buf, const Optional<ByteBuffer
     auto mac = ByteBuffer::copy(digest.immutable_data(), digest.data_length());
 #ifdef TLS_DEBUG
     dbg() << "HMAC of the block for sequence number " << m_context.local_sequence_number;
-    print_buffer(mac);
+    AK::hex_dump(mac);
 #endif
     return mac;
 }
@@ -213,7 +216,7 @@ ssize_t TLSv12::handle_message(const ByteBuffer& buffer)
     if (m_context.cipher_spec_set && type != MessageType::ChangeCipher) {
 #ifdef TLS_DEBUG
         dbg() << "Encrypted: ";
-        print_buffer(buffer.slice_view(header_size, length));
+        AK::hex_dump(buffer.slice_view(header_size, length));
 #endif
 
         ASSERT(m_aes_remote);
@@ -228,7 +231,7 @@ ssize_t TLSv12::handle_message(const ByteBuffer& buffer)
 
 #ifdef TLS_DEBUG
         dbg() << "Decrypted: ";
-        print_buffer(decrypted);
+        AK::hex_dump(decrypted);
 #endif
 
         auto mac_size = mac_length();
@@ -248,9 +251,9 @@ ssize_t TLSv12::handle_message(const ByteBuffer& buffer)
         if (hmac != message_mac) {
             dbg() << "integrity check failed (mac length " << length << ")";
             dbg() << "mac received:";
-            print_buffer(message_mac);
+            AK::hex_dump(message_mac);
             dbg() << "mac computed:";
-            print_buffer(hmac);
+            AK::hex_dump(hmac);
             auto packet = build_alert(true, (u8)AlertDescription::BadRecordMAC);
             write_packet(packet);
 
@@ -297,7 +300,7 @@ ssize_t TLSv12::handle_message(const ByteBuffer& buffer)
     case MessageType::Alert:
         dbg() << "alert message of length " << length;
         if (length >= 2) {
-            print_buffer(plain);
+            AK::hex_dump(plain);
             auto level = plain[0];
             auto code = plain[1];
             if (level == (u8)AlertLevel::Critical) {

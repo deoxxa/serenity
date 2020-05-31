@@ -24,16 +24,22 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <AK/HexDump.h>
 #include <LibCore/DateTime.h>
 #include <LibCore/Timer.h>
 #include <LibCrypto/ASN1/DER.h>
 #include <LibCrypto/PK/Code/EMSA_PSS.h>
 #include <LibTLS/TLSv12.h>
 
+#define TLS_DEBUG
+
 namespace TLS {
 
 Optional<ByteBuffer> TLSv12::read()
 {
+#ifdef TLS_DEBUG
+    dbg() << "TLSv12: read()";
+#endif
     if (m_context.application_buffer.size()) {
         auto buf = m_context.application_buffer.slice(0, m_context.application_buffer.size());
         m_context.application_buffer.clear();
@@ -44,6 +50,9 @@ Optional<ByteBuffer> TLSv12::read()
 
 ByteBuffer TLSv12::read(size_t max_size)
 {
+#ifdef TLS_DEBUG
+    dbg() << "TLSv12: read(" << max_size << ")";
+#endif
     if (m_context.application_buffer.size()) {
         auto length = min(m_context.application_buffer.size(), max_size);
         auto buf = m_context.application_buffer.slice(0, length);
@@ -55,6 +64,9 @@ ByteBuffer TLSv12::read(size_t max_size)
 
 ByteBuffer TLSv12::read_line(size_t max_size)
 {
+#ifdef TLS_DEBUG
+    dbg() << "TLSv12: read_line(" << max_size << ")";
+#endif
     if (!can_read_line())
         return {};
 
@@ -75,6 +87,10 @@ ByteBuffer TLSv12::read_line(size_t max_size)
 
 bool TLSv12::write(const ByteBuffer& buffer)
 {
+#ifdef TLS_DEBUG
+    dbg() << "TLSv12: write(" << buffer.size() << ")";
+    AK::hex_dump(buffer);
+#endif
     if (m_context.connection_status != ConnectionStatus::Established) {
 #ifdef TLS_DEBUG
         dbg() << "write request while not connected";
@@ -149,6 +165,10 @@ bool TLSv12::common_connect(const struct sockaddr* saddr, socklen_t length)
 
 void TLSv12::read_from_socket()
 {
+#ifdef TLS_DEBUG
+    dbg() << "TLSv12::read_from_socket";
+#endif
+
     if (m_context.application_buffer.size() > 0) {
         deferred_invoke([&](auto&) { read_from_socket(); });
         if (on_tls_ready_to_read)
@@ -166,6 +186,10 @@ void TLSv12::write_into_socket()
 #ifdef TLS_DEBUG
     dbg() << "Flushing cached records: " << m_context.tls_buffer.size() << " established? " << is_established();
 #endif
+
+    if (m_context.application_buffer.size()) // hey client, you still have stuff to read...
+        return;
+
     m_has_scheduled_write_flush = false;
     if (!check_connection_state(false))
         return;
@@ -174,9 +198,8 @@ void TLSv12::write_into_socket()
     if (!is_established())
         return;
 
-    if (!m_context.application_buffer.size()) // hey client, you still have stuff to read...
-        if (on_tls_ready_to_write)
-            on_tls_ready_to_write(*this);
+    if (on_tls_ready_to_write)
+        on_tls_ready_to_write(*this);
 }
 
 bool TLSv12::check_connection_state(bool read)
@@ -221,6 +244,10 @@ bool TLSv12::check_connection_state(bool read)
 
 bool TLSv12::flush()
 {
+#ifdef TLS_DEBUG
+    dbg() << "TLSv12::flush";
+#endif
+
     auto out_buffer = write_buffer().data();
     size_t out_buffer_index { 0 };
     size_t out_buffer_length = write_buffer().size();
@@ -230,7 +257,7 @@ bool TLSv12::flush()
 
 #ifdef TLS_DEBUG
     dbg() << "SENDING...";
-    print_buffer(out_buffer, out_buffer_length);
+    AK::hex_dump(out_buffer, out_buffer_length);
 #endif
     if (Core::Socket::write(&out_buffer[out_buffer_index], out_buffer_length)) {
         write_buffer().clear();

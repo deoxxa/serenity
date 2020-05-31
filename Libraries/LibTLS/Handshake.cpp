@@ -30,6 +30,8 @@
 #include <LibCrypto/PK/Code/EMSA_PSS.h>
 #include <LibTLS/TLSv12.h>
 
+#define TLS_DEBUG
+
 namespace TLS {
 
 ByteBuffer TLSv12::build_hello()

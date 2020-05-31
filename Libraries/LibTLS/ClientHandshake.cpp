@@ -24,11 +24,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <AK/HexDump.h>
 #include <AK/Random.h>
 #include <LibCore/Timer.h>
 #include <LibCrypto/ASN1/DER.h>
 #include <LibCrypto/PK/Code/EMSA_PSS.h>
 #include <LibTLS/TLSv12.h>
+
+#define TLS_DEBUG
 
 namespace TLS {
 
@@ -90,7 +93,7 @@ ssize_t TLSv12::handle_hello(const ByteBuffer& buffer, WritePacketStage& write_p
         m_context.session_id_size = session_length;
 #ifdef TLS_DEBUG
         dbg() << "Remote session ID:";
-        print_buffer(ByteBuffer::wrap(m_context.session_id, session_length));
+        AK::hex_dump(ByteBuffer::wrap(m_context.session_id, session_length));
 #endif
     } else {
         m_context.session_id_size = 0;
@@ -190,7 +193,7 @@ ssize_t TLSv12::handle_hello(const ByteBuffer& buffer, WritePacketStage& write_p
                 }
             } else if (extension_type == HandshakeExtension::SignatureAlgorithms) {
                 dbg() << "supported signatures: ";
-                print_buffer(buffer.slice_view(res, extension_length));
+                AK::hex_dump(buffer.slice_view(res, extension_length));
                 // FIXME: what are we supposed to do here?
             }
             res += extension_length;
@@ -276,7 +279,7 @@ void TLSv12::build_random(PacketBuilder& builder)
     const auto& certificate = m_context.certificates[0];
 #ifdef TLS_DEBUG
     dbg() << "PreMaster secret";
-    print_buffer(m_context.premaster_key);
+    AK::hex_dump(m_context.premaster_key);
 #endif
 
     Crypto::PK::RSA_PKCS1_EME rsa(certificate.public_key.modulus(), 0, certificate.public_key.public_exponent());
@@ -287,7 +290,7 @@ void TLSv12::build_random(PacketBuilder& builder)
 
 #ifdef TLS_DEBUG
     dbg() << "Encrypted: ";
-    print_buffer(outbuf);
+    AK::hex_dump(outbuf);
 #endif
 
     if (!compute_master_secret(bytes)) {
